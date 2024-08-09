@@ -176,7 +176,7 @@ int main(int argc, char **argv) {
     }
     nav_msgs::Odometry odom;
     odom.header.frame_id = "camera_init";
-    odom.header.stamp = ros::Time::now();
+    odom.header.stamp.fromSec(times_vec[cloudInd]);
     odom.pose.pose.position.x = translation[0];
     odom.pose.pose.position.y = translation[1];
     odom.pose.pose.position.z = translation[2];
