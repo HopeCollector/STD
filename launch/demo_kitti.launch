@@ -10,6 +10,7 @@
 		type="place_recognition_kitti" 
 		name="place_recognition_kitti" 
 		output="screen" 
+    required="true"
 	/>
   <param name="lidar_path" type="string" value = "$(arg lidar)/"/>
   <param name="pose_path" type="string" value = "$(arg pose)"/>
