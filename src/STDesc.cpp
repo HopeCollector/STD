@@ -671,10 +671,14 @@ void STDescManager::extract_corner(
   double resolution = config_setting_.proj_image_resolution_;
   double dis_threshold_min = config_setting_.proj_dis_min_;
   double dis_threshold_max = config_setting_.proj_dis_max_;
+
+  // 构造投影平面的一般式平面方程的四个系数 Ax+By+Cz+D=0
   double A = proj_normal[0];
   double B = proj_normal[1];
   double C = proj_normal[2];
   double D = -(A * proj_center[0] + B * proj_center[1] + C * proj_center[2]);
+
+  // 确定一个投影平面上的向量，保证 x_axis * norm = 0
   Eigen::Vector3d x_axis(1, 1, 0);
   if (C != 0) {
     x_axis[2] = -(A + B) / C;
@@ -687,27 +691,36 @@ void STDescManager::extract_corner(
   x_axis.normalize();
   Eigen::Vector3d y_axis = proj_normal.cross(x_axis);
   y_axis.normalize();
+
+  // x_axis, proj_center 确定的平面 plane-x
   double ax = x_axis[0];
   double bx = x_axis[1];
   double cx = x_axis[2];
   double dx =
       -(ax * proj_center[0] + bx * proj_center[1] + cx * proj_center[2]);
+
+  // y_axis, proj_center 确定的平面 plane-y
   double ay = y_axis[0];
   double by = y_axis[1];
   double cy = y_axis[2];
   double dy =
       -(ay * proj_center[0] + by * proj_center[1] + cy * proj_center[2]);
+
+  // 生成以 proj_center 为原点的，x_axis, y_axis 为坐标轴的 2d 投影点
   std::vector<Eigen::Vector2d> point_list_2d;
   for (size_t i = 0; i < proj_points.size(); i++) {
     double x = proj_points[i][0];
     double y = proj_points[i][1];
     double z = proj_points[i][2];
     double dis = fabs(x * A + y * B + z * C + D);
+
+    // 如果点到平面的距离太远，就跳过
     if (dis < dis_threshold_min || dis > dis_threshold_max) {
       continue;
     }
-    Eigen::Vector3d cur_project;
 
+    // 投影点到平面的投影
+    Eigen::Vector3d cur_project;
     cur_project[0] = (-A * (B * y + C * z + D) + x * (B * B + C * C)) /
                      (A * A + B * B + C * C);
     cur_project[1] = (-B * (A * x + C * z + D) + y * (A * A + C * C)) /
@@ -718,8 +731,12 @@ void STDescManager::extract_corner(
     p.x = cur_project[0];
     p.y = cur_project[1];
     p.z = cur_project[2];
+
+    // 投影点到 x-axis 的距离
     double project_x =
         cur_project[0] * ay + cur_project[1] * by + cur_project[2] * cy + dy;
+
+    // 投影点到 y-axis 的距离
     double project_y =
         cur_project[0] * ax + cur_project[1] * bx + cur_project[2] * cx + dx;
     Eigen::Vector2d p_2d(project_x, project_y);
@@ -732,6 +749,8 @@ void STDescManager::extract_corner(
   if (point_list_2d.size() <= 5) {
     return;
   }
+
+  // 计算投影点的覆盖范围
   for (auto pi : point_list_2d) {
     if (pi[0] < min_x) {
       min_x = pi[0];
@@ -758,6 +777,8 @@ void STDescManager::extract_corner(
   double gradient_array[x_axis_len][y_axis_len] = {0};
   double mean_x_array[x_axis_len][y_axis_len] = {0};
   double mean_y_array[x_axis_len][y_axis_len] = {0};
+
+  // 初始化容器
   for (int x = 0; x < x_axis_len; x++) {
     for (int y = 0; y < y_axis_len; y++) {
       img_count_array[x][y] = 0;
@@ -768,6 +789,8 @@ void STDescManager::extract_corner(
       img_container[x][y] = single_container;
     }
   }
+
+  // 投影点分布到 2D 网格中
   for (size_t i = 0; i < point_list_2d.size(); i++) {
     int x_index = (int)((point_list_2d[i][0] - min_x) / resolution);
     int y_index = (int)((point_list_2d[i][1] - min_y) / resolution);
@@ -776,7 +799,14 @@ void STDescManager::extract_corner(
     img_count_array[x_index][y_index]++;
     img_container[x_index][y_index].push_back(point_list_2d[i]);
   }
-  // calc gradient
+
+  // 每个元素与其周围元素（在一个 3x3 的窗口内）的差值的平均值
+  //    1  2  3
+  //    4  5  6
+  //    7  8  9
+  // 5 为当前像素
+  // 计算周围 8 个像素包含的点的平均值（排除不包含点的像素）
+  // 梯度就是 5 包含的点数与平均点数的差值
   for (int x = 0; x < x_axis_len; x++) {
     for (int y = 0; y < y_axis_len; y++) {
       double gradient = 0;
@@ -786,8 +816,14 @@ void STDescManager::extract_corner(
         for (int y_inc = -inc; y_inc <= inc; y_inc++) {
           int xx = x + x_inc;
           int yy = y + y_inc;
+
+          // 如果正在处理的点在合法范围内
           if (xx >= 0 && xx < x_axis_len && yy >= 0 && yy < y_axis_len) {
+
+            // 如果正在处理的点不是中心点（x，y）
             if (xx != x || yy != y) {
+
+              // 如果有投影点
               if (img_count_array[xx][yy] >= 0) {
                 gradient += img_count_array[x][y] - img_count_array[xx][yy];
                 cnt++;
@@ -814,10 +850,14 @@ void STDescManager::extract_corner(
       double max_gradient = 0;
       int max_gradient_x_index = -10;
       int max_gradient_y_index = -10;
+
+      // 将像素坐标转换为投影坐标
       for (int x_index = x_segment_index * segmen_base_num;
            x_index < (x_segment_index + 1) * segmen_base_num; x_index++) {
         for (int y_index = y_segment_index * segmen_base_num;
              y_index < (y_segment_index + 1) * segmen_base_num; y_index++) {
+
+          // 记录最大值与最大值的下标
           if (img_count_array[x_index][y_index] > max_gradient) {
             max_gradient = img_count_array[x_index][y_index];
             max_gradient_x_index = x_index;
@@ -825,6 +865,8 @@ void STDescManager::extract_corner(
           }
         }
       }
+
+      // 保存足够大的点作为特征点
       if (max_gradient >= config_setting_.corner_thre_) {
         max_gradient_vec.push_back(max_gradient);
         max_gradient_x_index_vec.push_back(max_gradient_x_index);
@@ -845,6 +887,8 @@ void STDescManager::extract_corner(
   direction_list.push_back(d);
   for (size_t i = 0; i < max_gradient_vec.size(); i++) {
     bool is_add = true;
+
+    // 没啥用
     for (int j = 0; j < 4; j++) {
       Eigen::Vector2i p(max_gradient_x_index_vec[i],
                         max_gradient_y_index_vec[i]);
@@ -859,15 +903,21 @@ void STDescManager::extract_corner(
       }
     }
     if (is_add) {
+
+      // mean 其实应该叫 sum，它只做了累加，没有除以个数
+      // x 是到 x-axis 的距离
       double px = mean_x_array[max_gradient_x_index_vec[i]]
                               [max_gradient_y_index_vec[i]] /
                   img_count_array[max_gradient_x_index_vec[i]]
                                  [max_gradient_y_index_vec[i]];
+
+      // y 是到 y-axis 的距离
       double py = mean_y_array[max_gradient_x_index_vec[i]]
                               [max_gradient_y_index_vec[i]] /
                   img_count_array[max_gradient_x_index_vec[i]]
                                  [max_gradient_y_index_vec[i]];
-      // reproject on 3D space
+
+      // 保存数据
       Eigen::Vector3d coord = py * x_axis + px * y_axis + proj_center;
       pcl::PointXYZINormal pi;
       pi.x = coord[0];
