@@ -938,15 +938,20 @@ void STDescManager::non_maxi_suppression(
   std::vector<bool> is_add_vec;
   pcl::PointCloud<pcl::PointXYZINormal>::Ptr prepare_key_cloud(
       new pcl::PointCloud<pcl::PointXYZINormal>);
+
+  // 准备 kd 树，初始化标记
   pcl::KdTreeFLANN<pcl::PointXYZINormal> kd_tree;
   for (auto pi : corner_points->points) {
     prepare_key_cloud->push_back(pi);
     is_add_vec.push_back(true);
   }
   kd_tree.setInputCloud(prepare_key_cloud);
+
   std::vector<int> pointIdxRadiusSearch;
   std::vector<float> pointRadiusSquaredDistance;
   double radius = config_setting_.non_max_suppression_radius_;
+
+  // 将所有搜索半径内不是最大值的点标记为删除
   for (size_t i = 0; i < prepare_key_cloud->size(); i++) {
     pcl::PointXYZINormal searchPoint = prepare_key_cloud->points[i];
     if (kd_tree.radiusSearch(searchPoint, radius, pointIdxRadiusSearch,
@@ -957,9 +962,13 @@ void STDescManager::non_maxi_suppression(
             prepare_key_cloud->points[pointIdxRadiusSearch[j]].x,
             prepare_key_cloud->points[pointIdxRadiusSearch[j]].y,
             prepare_key_cloud->points[pointIdxRadiusSearch[j]].z);
+
+        // 跳过自身
         if (pointIdxRadiusSearch[j] == i) {
           continue;
         }
+
+        // 如果搜索到的点的强度比当前点大，就不是最大值，将自己标记为删除
         if (prepare_key_cloud->points[i].intensity <=
             prepare_key_cloud->points[pointIdxRadiusSearch[j]].intensity) {
           is_add_vec[i] = false;
@@ -967,6 +976,8 @@ void STDescManager::non_maxi_suppression(
       }
     }
   }
+
+  // 将所有标记为 true 的点添加回 corner_points
   corner_points->clear();
   for (size_t i = 0; i < is_add_vec.size(); i++) {
     if (is_add_vec[i]) {

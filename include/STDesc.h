@@ -336,7 +336,14 @@ private:
                  const std::vector<Eigen::Vector3d> proj_points,
                  pcl::PointCloud<pcl::PointXYZINormal>::Ptr &corner_points);
 
-  // non maximum suppression, to control the number of corners
+  //
+  /**
+   * @brief 删除所有搜索半径内不是最大值的点
+   * 
+   * 搜索半径在配置文件中配置，会修改传入参数 corner_points
+   * 
+   * @param corner_points 角点点云的指针
+   */
   void non_maxi_suppression(
       pcl::PointCloud<pcl::PointXYZINormal>::Ptr &corner_points);
 
