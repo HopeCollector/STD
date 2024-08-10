@@ -567,15 +567,27 @@ void STDescManager::corner_extractor(
       }
     }
   }
+
+  // 生成特征点
   for (auto iter = voxel_map.begin(); iter != voxel_map.end(); iter++) {
+
+    // 处理不是平面的体素
     if (!iter->second->plane_ptr_->is_plane_) {
       VOXEL_LOC current_position = iter->first;
       OctoTree *current_octo = iter->second;
       int connect_index = -1;
+
+      // 处理当前体素的 6 个相邻体素
       for (int i = 0; i < 6; i++) {
+
+        // 只处理有连接的体素
+        // 由于 current_octo 不是平面体素，所以能过判断的都是平面体素
         if (current_octo->connect_[i]) {
           connect_index = i;
           OctoTree *connect_octo = current_octo->connect_tree_[connect_index];
+
+          // 只处理附近还有平面的体素，如果只是这个体素自己是平面还不行
+          // 必须他还连着其他的平面体素才可以
           bool use = false;
           for (int j = 0; j < 6; j++) {
             if (connect_octo->is_check_connect_[j]) {
@@ -588,6 +600,8 @@ void STDescManager::corner_extractor(
           if (use == false) {
             continue;
           }
+
+          // 能走到这里说明 connect_octo 是一个平面体素，并且还与其他的平面体素相连
           // only project voxels with points num > 10
           if (current_octo->voxel_points_.size() > 10) {
             Eigen::Vector3d projection_normal =
@@ -606,12 +620,20 @@ void STDescManager::corner_extractor(
                 bool skip_flag = false;
                 if (!voxel_map[connect_project_position]
                          ->plane_ptr_->is_plane_) {
+
+                  // 如果这个体素已经被投影到其他平面上
+                  // 且这个平面的法向量与当前平面的法向量相差不大
+                  // 则跳过，不再投影
                   if (voxel_map[connect_project_position]->is_project_) {
                     for (auto normal : voxel_map[connect_project_position]
                                            ->proj_normal_vec_) {
+
+                      // 一加一减是为了防止法向量相差 180°
                       Eigen::Vector3d normal_diff = projection_normal - normal;
                       Eigen::Vector3d normal_add = projection_normal + normal;
-                      // check if repeated project
+
+                      // 参见 STDEquations.ipynb Prob 2
+                      // 差值的模长为 0.5 时，两个法向量的夹角大概是 28.9°
                       if (normal_diff.norm() < 0.5 || normal_add.norm() < 0.5) {
                         skip_flag = true;
                       }
@@ -620,6 +642,8 @@ void STDescManager::corner_extractor(
                   if (skip_flag) {
                     continue;
                   }
+
+                  // 保存投影的点、法向量，并标记为已经投影
                   for (size_t j = 0; j < voxel_map[connect_project_position]
                                              ->voxel_points_.size();
                        j++) {
@@ -645,11 +669,15 @@ void STDescManager::corner_extractor(
       }
     }
   }
+
+  // 过滤掉强度不够的特征点
   non_maxi_suppression(prepare_corner_points);
 
+  // 如果特征点数量小于最大值，直接返回
   if (config_setting_.maximum_corner_num_ > prepare_corner_points->size()) {
     corner_points = prepare_corner_points;
   } else {
+    // 如果特征点数量大于最大值，按照强度排序，取前 maximum_corner_num_ 个
     std::vector<std::pair<double, int>> attach_vec;
     for (size_t i = 0; i < prepare_corner_points->size(); i++) {
       attach_vec.push_back(std::pair<double, int>(
