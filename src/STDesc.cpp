@@ -1039,6 +1039,8 @@ void STDescManager::build_stdesc(
           pcl::PointXYZINormal p1 = searchPoint;
           pcl::PointXYZINormal p2 = corner_points->points[pointIdxNKNSearch[m]];
           pcl::PointXYZINormal p3 = corner_points->points[pointIdxNKNSearch[n]];
+
+          // 没用
           Eigen::Vector3d normal_inc1(p1.normal_x - p2.normal_x,
                                       p1.normal_y - p2.normal_y,
                                       p1.normal_z - p2.normal_z);
@@ -1051,18 +1053,24 @@ void STDescManager::build_stdesc(
           Eigen::Vector3d normal_add2(p3.normal_x + p2.normal_x,
                                       p3.normal_y + p2.normal_y,
                                       p3.normal_z + p2.normal_z);
+
+          // a: p1-p2, b: p1-p3, c: p2-p3
           double a = sqrt(pow(p1.x - p2.x, 2) + pow(p1.y - p2.y, 2) +
                           pow(p1.z - p2.z, 2));
           double b = sqrt(pow(p1.x - p3.x, 2) + pow(p1.y - p3.y, 2) +
                           pow(p1.z - p3.z, 2));
           double c = sqrt(pow(p3.x - p2.x, 2) + pow(p3.y - p2.y, 2) +
                           pow(p3.z - p2.z, 2));
+
+          // 如果边长不在阈值范围内，跳过
           if (a > max_dis_threshold || b > max_dis_threshold ||
               c > max_dis_threshold || a < min_dis_threshold ||
               b < min_dis_threshold || c < min_dis_threshold) {
             continue;
           }
-          // re-range the vertex by the side length
+          
+          // 用 L1 L2 L3 记录 a b c 的大小关系
+          // 这里用一个 sort_index 做能更好理解一些
           double temp;
           Eigen::Vector3d A, B, C;
           Eigen::Vector3i l1, l2, l3;
@@ -1094,7 +1102,8 @@ void STDescManager::build_stdesc(
             l1 = l2;
             l2 = l_temp;
           }
-          // check augnmentation
+          
+          // 检查这个三角特征是否已经被处理过
           pcl::PointXYZ d_p;
           d_p.x = a * 1000;
           d_p.y = b * 1000;
@@ -1102,8 +1111,12 @@ void STDescManager::build_stdesc(
           VOXEL_LOC position((int64_t)d_p.x, (int64_t)d_p.y, (int64_t)d_p.z);
           auto iter = feat_map.find(position);
           Eigen::Vector3d normal_1, normal_2, normal_3;
+
+          // 查不到就是没处理过，应该保存下来
           if (iter == feat_map.end()) {
             Eigen::Vector3d vertex_attached;
+
+            // 处理 A 点
             if (l1[0] == l2[0]) {
               A << p1.x, p1.y, p1.z;
               normal_1 << p1.normal_x, p1.normal_y, p1.normal_z;
@@ -1117,6 +1130,8 @@ void STDescManager::build_stdesc(
               normal_1 << p3.normal_x, p3.normal_y, p3.normal_z;
               vertex_attached[0] = p3.intensity;
             }
+
+            // 处理 B 点
             if (l1[0] == l3[0]) {
               B << p1.x, p1.y, p1.z;
               normal_2 << p1.normal_x, p1.normal_y, p1.normal_z;
@@ -1130,6 +1145,8 @@ void STDescManager::build_stdesc(
               normal_2 << p3.normal_x, p3.normal_y, p3.normal_z;
               vertex_attached[1] = p3.intensity;
             }
+
+            // 处理 C 点
             if (l2[0] == l3[0]) {
               C << p1.x, p1.y, p1.z;
               normal_3 << p1.normal_x, p1.normal_y, p1.normal_z;
