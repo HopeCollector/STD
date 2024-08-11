@@ -1188,6 +1188,8 @@ void STDescManager::candidate_selector(
   double match_array[MAX_FRAME_N] = {0};
   std::vector<std::pair<STDesc, STDesc>> match_vec;
   std::vector<int> match_index_vec;
+
+  // 生成搜索范围
   std::vector<Eigen::Vector3i> voxel_round;
   for (int x = -1; x <= 1; x++) {
     for (int y = -1; y <= 1; y++) {
@@ -1221,25 +1223,45 @@ void STDescManager::candidate_selector(
     double dis_threshold =
         src_std.side_length_.norm() * config_setting_.rough_dis_threshold_;
     for (auto voxel_inc : voxel_round) {
+
+      // 将描述子的边长作为 x y z 来对待，参见 STDescManager::AddSTDescs
       position.x = (int)(src_std.side_length_[0] + voxel_inc[0]);
       position.y = (int)(src_std.side_length_[1] + voxel_inc[1]);
       position.z = (int)(src_std.side_length_[2] + voxel_inc[2]);
+
+      // 不知道为啥要 +0.5
+      // 这样做单边最大误差是 1.5，最小是 0.0
       Eigen::Vector3d voxel_center((double)position.x + 0.5,
                                    (double)position.y + 0.5,
                                    (double)position.z + 0.5);
+
+      // 将 side lengths 当作一个点
+      // 将 voxel center 当作正在处理的临近点
+      // 这里判断就是值判断距离较近的临近点，距离远的就算了
+      // 保存描述子时，为了方便搜索，side lengths 被转成了整数
+      // 四舍五入，所以 +0.5， 丢失了部分精度
+      // 因此搜索的时候上面也是 +0.5 再搜索
+      // 参见 Prob 3
+      // 判断条件中的 1.5 过滤后，26 个搜索方向只能剩下 17 个有效
+      // 若将其改为 1.0，只能剩下 4 个有效
       if ((src_std.side_length_ - voxel_center).norm() < 1.5) {
         auto iter = data_base_.find(position);
         if (iter != data_base_.end()) {
           for (size_t j = 0; j < data_base_[position].size(); j++) {
+
+            // 避免相邻帧匹配
             if ((src_std.frame_id_ - data_base_[position][j].frame_id_) >
                 config_setting_.skip_near_num_) {
               double dis =
                   (src_std.side_length_ - data_base_[position][j].side_length_)
                       .norm();
-              // rough filter with side lengths
+
+              // 粗匹配，判断边长差异是否在阈值内
+              // 这个阈值时根据边长成比例的
               if (dis < dis_threshold) {
                 dis_match_cnt++;
-                // rough filter with vertex attached info
+                
+                // vertex attached 保存的是每个点的强度信息
                 double vertex_attach_diff =
                     2.0 *
                     (src_std.vertex_attached_ -
@@ -1250,6 +1272,8 @@ void STDescManager::candidate_selector(
                         .norm();
                 // std::cout << "vertex diff:" << vertex_attach_diff <<
                 // std::endl;
+
+                // 过滤强度差异
                 if (vertex_attach_diff <
                     config_setting_.vertex_diff_threshold_) {
                   final_match_cnt++;
@@ -1268,6 +1292,7 @@ void STDescManager::candidate_selector(
   //           << ", final match num:" << final_match_cnt << std::endl;
 
   // record match index
+  // TODO： 将这些乱七八糟的 index 统一成 frame-id，减少逻辑压力
   std::vector<Eigen::Vector2i, Eigen::aligned_allocator<Eigen::Vector2i>>
       index_recorder;
   for (size_t i = 0; i < useful_match.size(); i++) {
@@ -1295,8 +1320,12 @@ void STDescManager::candidate_selector(
         max_vote_index = i;
       }
     }
+
+    // 提取要相互匹配的描述子
     STDMatchList match_triangle_list;
     if (max_vote_index >= 0 && max_vote >= 5) {
+
+      // 归零，防止下一次又提取到
       match_array[max_vote_index] = 0;
       match_triangle_list.match_id_.first = current_frame_id_;
       match_triangle_list.match_id_.second = max_vote_index;
@@ -1304,6 +1333,10 @@ void STDescManager::candidate_selector(
         if (match_index_vec[i] == max_vote_index) {
           std::pair<STDesc, STDesc> single_match_pair;
           single_match_pair.first = stds_vec[index_recorder[i][0]];
+
+          // 当前描述子的 id：index_recorder[i][0]
+          // 当前描述子要配对的描述子的 id（相对
+          // useful_match_position）：index_recorder[i][1]
           single_match_pair.second =
               data_base_[useful_match_position[index_recorder[i][0]]
                                               [index_recorder[i][1]]]
