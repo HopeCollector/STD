@@ -1453,6 +1453,8 @@ void STDescManager::triangle_solver(std::pair<STDesc, STDesc> &std_pair,
                                                         Eigen::ComputeThinV);
   Eigen::Matrix3d V = svd.matrixV();
   Eigen::Matrix3d U = svd.matrixU();
+
+  // 参见 Prob 4. 对 ICP 的推导
   rot = V * U.transpose();
   if (rot.determinant() < 0) {
     Eigen::Matrix3d K;

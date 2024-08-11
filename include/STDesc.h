@@ -364,6 +364,7 @@ private:
                    std::vector<std::pair<STDesc, STDesc>> &sucess_match_vec);
 
   // Get the transform between a matched std pair
+  // 这里其实就是做了一步 ICP 匹配
   void triangle_solver(std::pair<STDesc, STDesc> &std_pair, Eigen::Vector3d &t,
                        Eigen::Matrix3d &rot);
 
