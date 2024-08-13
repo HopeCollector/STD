@@ -401,6 +401,8 @@ void STDescManager::AddSTDescs(const std::vector<STDesc> &stds_vec) {
   for (auto single_std : stds_vec) {
     // calculate the position of single std
     STDesc_LOC position;
+
+    // 四舍五入
     position.x = (int)(single_std.side_length_[0] + 0.5);
     position.y = (int)(single_std.side_length_[1] + 0.5);
     position.z = (int)(single_std.side_length_[2] + 0.5);
