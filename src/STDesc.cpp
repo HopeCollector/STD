@@ -1377,7 +1377,11 @@ void STDescManager::candidate_verify(
     int vote = 0;
     Eigen::Matrix3d test_rot;
     Eigen::Vector3d test_t;
+
+    // 做 1 步 ICP，解出两个描述子的变换关系
     triangle_solver(single_pair, test_t, test_rot);
+
+    // 检测这组变换关系对其他描述子匹配对是否有效
     for (size_t j = 0; j < candidate_matcher.match_list_.size(); j++) {
       auto verify_pair = candidate_matcher.match_list_[j];
       Eigen::Vector3d A = verify_pair.first.vertex_A_;
@@ -1389,15 +1393,21 @@ void STDescManager::candidate_verify(
       double dis_A = (A_transform - verify_pair.second.vertex_A_).norm();
       double dis_B = (B_transform - verify_pair.second.vertex_B_).norm();
       double dis_C = (C_transform - verify_pair.second.vertex_C_).norm();
+
+      // 若变换后的描述子与另一个的几何位置几乎重合，则 vote+1
       if (dis_A < dis_threshold && dis_B < dis_threshold &&
           dis_C < dis_threshold) {
         vote++;
       }
     }
+
+    // 这里不存在数据竞争，应该是不需要加锁的，加锁反而慢了
     mylock.lock();
     vote_list[i] = vote;
     mylock.unlock();
   }
+
+  // 选出最佳的变换关系
   int max_vote_index = 0;
   int max_vote = 0;
   for (size_t i = 0; i < vote_list.size(); i++) {
@@ -1409,6 +1419,8 @@ void STDescManager::candidate_verify(
   if (max_vote >= 4) {
     auto best_pair = candidate_matcher.match_list_[max_vote_index * skip_len];
     int vote = 0;
+
+    // 又做了一次 ICP，完全没必要，把前面计算的结果存下来就好了
     Eigen::Matrix3d best_rot;
     Eigen::Vector3d best_t;
     triangle_solver(best_pair, best_t, best_rot);
@@ -1430,6 +1442,9 @@ void STDescManager::candidate_verify(
         sucess_match_vec.push_back(verify_pair);
       }
     }
+
+    // 用几何验证的分数
+    // verify_score = 成功匹配数量 / 总数量
     verify_score = plane_geometric_verify(
         plane_cloud_vec_.back(),
         plane_cloud_vec_[candidate_matcher.match_id_.second], relative_pose);
@@ -1487,6 +1502,8 @@ double STDescManager::plane_geometric_verify(
   double useful_match = 0;
   double normal_threshold = config_setting_.normal_threshold_;
   double dis_threshold = config_setting_.dis_threshold_;
+
+  // 面-面 匹配
   for (size_t i = 0; i < source_cloud->size(); i++) {
     pcl::PointXYZINormal searchPoint = source_cloud->points[i];
     pcl::PointXYZ use_search_point;
