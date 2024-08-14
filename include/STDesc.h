@@ -206,6 +206,8 @@ public:
   void init_octo_tree();
 };
 
+// 体素降采样，会一起处理 intensity
+// 完全可以用 pcl::VoxelGrid 代替
 void down_sampling_voxel(pcl::PointCloud<pcl::PointXYZI> &pl_feat,
                          double voxel_size);
 

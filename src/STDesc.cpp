@@ -8,26 +8,33 @@ void down_sampling_voxel(pcl::PointCloud<pcl::PointXYZI> &pl_feat,
   std::unordered_map<VOXEL_LOC, M_POINT> voxel_map;
   uint plsize = pl_feat.size();
 
+  // 计算每个点的体素坐标
   for (uint i = 0; i < plsize; i++) {
     pcl::PointXYZI &p_c = pl_feat[i];
     float loc_xyz[3];
     for (int j = 0; j < 3; j++) {
       loc_xyz[j] = p_c.data[j] / voxel_size;
+
+      // 因为负数取整会向上取整，所以负数的话要减一
       if (loc_xyz[j] < 0) {
         loc_xyz[j] -= 1.0;
       }
     }
 
+    // 体素坐标
     VOXEL_LOC position((int64_t)loc_xyz[0], (int64_t)loc_xyz[1],
                        (int64_t)loc_xyz[2]);
     auto iter = voxel_map.find(position);
+
     if (iter != voxel_map.end()) {
+      // 如果这个体素已经有点了，就把这个点的坐标加上去
       iter->second.xyz[0] += p_c.x;
       iter->second.xyz[1] += p_c.y;
       iter->second.xyz[2] += p_c.z;
       iter->second.intensity += p_c.intensity;
       iter->second.count++;
     } else {
+      // 如果这个体素还没有点，就新建一个点
       M_POINT anp;
       anp.xyz[0] = p_c.x;
       anp.xyz[1] = p_c.y;
@@ -41,6 +48,7 @@ void down_sampling_voxel(pcl::PointCloud<pcl::PointXYZI> &pl_feat,
   pl_feat.clear();
   pl_feat.resize(plsize);
 
+  // 把体素坐标的平均值赋给体素
   uint i = 0;
   for (auto iter = voxel_map.begin(); iter != voxel_map.end(); ++iter) {
     pl_feat[i].x = iter->second.xyz[0] / iter->second.count;
