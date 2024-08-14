@@ -1556,6 +1556,8 @@ void STDescManager::PlaneGeomrtricIcp(
     const pcl::PointCloud<pcl::PointXYZINormal>::Ptr &source_cloud,
     const pcl::PointCloud<pcl::PointXYZINormal>::Ptr &target_cloud,
     std::pair<Eigen::Vector3d, Eigen::Matrix3d> &transform) {
+
+  // 首先使用 target_cloud 建立 kd 树
   pcl::KdTreeFLANN<pcl::PointXYZ>::Ptr kd_tree(
       new pcl::KdTreeFLANN<pcl::PointXYZ>);
   pcl::PointCloud<pcl::PointXYZ>::Ptr input_cloud(
@@ -1568,6 +1570,8 @@ void STDescManager::PlaneGeomrtricIcp(
     input_cloud->push_back(pi);
   }
   kd_tree->setInputCloud(input_cloud);
+
+  // 构造问题参数
   ceres::Manifold *quaternion_manifold = new ceres::EigenQuaternionManifold;
   ceres::Problem problem;
   ceres::LossFunction *loss_function = nullptr;
@@ -1583,6 +1587,8 @@ void STDescManager::PlaneGeomrtricIcp(
   std::vector<int> pointIdxNKNSearch(1);
   std::vector<float> pointNKNSquaredDistance(1);
   int useful_match = 0;
+
+  // 搜索匹配点，添加到 ceres 优化问题中
   for (size_t i = 0; i < source_cloud->size(); i++) {
     pcl::PointXYZINormal searchPoint = source_cloud->points[i];
     Eigen::Vector3d pi(searchPoint.x, searchPoint.y, searchPoint.z);
@@ -1596,6 +1602,7 @@ void STDescManager::PlaneGeomrtricIcp(
     ni = rot * ni;
     if (kd_tree->nearestKSearch(use_search_point, 1, pointIdxNKNSearch,
                                 pointNKNSquaredDistance) > 0) {
+      // 只考虑最近的点
       pcl::PointXYZINormal nearstPoint =
           target_cloud->points[pointIdxNKNSearch[0]];
       Eigen::Vector3d tpi(nearstPoint.x, nearstPoint.y, nearstPoint.z);
@@ -1605,6 +1612,8 @@ void STDescManager::PlaneGeomrtricIcp(
       Eigen::Vector3d normal_add = ni + tni;
       double point_to_point_dis = (pi - tpi).norm();
       double point_to_plane = fabs(tni.transpose() * (pi - tpi));
+
+      // 只要误差足够小就添加到优化问题中
       if ((normal_inc.norm() < config_setting_.normal_threshold_ ||
            normal_add.norm() < config_setting_.normal_threshold_) &&
           point_to_plane < config_setting_.dis_threshold_ &&
@@ -1618,6 +1627,7 @@ void STDescManager::PlaneGeomrtricIcp(
                                     source_cloud->points[i].normal_y,
                                     source_cloud->points[i].normal_z);
 
+        // 平面到平面的距离作为残差
         cost_function = PlaneSolver::Create(curr_point, curr_normal, tpi, tni);
         problem.AddResidualBlock(cost_function, loss_function, para_q, para_t);
       }

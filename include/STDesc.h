@@ -307,6 +307,7 @@ public:
   void AddSTDescs(const std::vector<STDesc> &stds_vec);
 
   // Geometrical optimization by plane-to-plane ico
+  // pcl::IterativeClosestPointWithNormals 是不是也能实现相同的目的？
   void PlaneGeomrtricIcp(
       const pcl::PointCloud<pcl::PointXYZINormal>::Ptr &source_cloud,
       const pcl::PointCloud<pcl::PointXYZINormal>::Ptr &target_cloud,
