@@ -213,40 +213,57 @@ int main(int argc, char **argv) {
       gtsam::noiseModel::Diagonal::Variances(
           (gtsam::Vector(6) << 1e-6, 1e-6, 1e-6, 1e-4, 1e-4, 1e-4).finished());
 
+  // 没用
   gtsam::noiseModel::Diagonal::shared_ptr priorNoise =
       gtsam::noiseModel::Diagonal::Variances(
           (gtsam::Vector(6) << 1e-2, 1e-2, M_PI * M_PI, 1e8, 1e8, 1e8)
               .finished()); // rad*rad, meter*meter
 
+  // 闭环因子的噪声模型
   double loopNoiseScore = 1e-1;
   gtsam::Vector robustNoiseVector6(
       6); // gtsam::Pose3 factor has 6 elements (6D)
   robustNoiseVector6 << loopNoiseScore, loopNoiseScore, loopNoiseScore,
       loopNoiseScore, loopNoiseScore, loopNoiseScore;
+  // Robust 噪声模型效果要比 Diagonal 模型更适应真实数据
   gtsam::noiseModel::Base::shared_ptr robustLoopNoise =
       gtsam::noiseModel::Robust::Create(
           gtsam::noiseModel::mEstimator::Cauchy::Create(1),
           gtsam::noiseModel::Diagonal::Variances(robustNoiseVector6));
 
+  // 初始化优化器（ISAM2）
+  // 看论文知道这个优化器确实很适合这个任务
+  // https://ieeexplore.ieee.org/abstract/document/5979641
   gtsam::ISAM2Params parameters;
   parameters.relinearizeThreshold = 0.01;
   parameters.relinearizeSkip = 1;
   gtsam::ISAM2 isam(parameters);
 
+  // 点云序号
   size_t cloudInd = 0;
+  // 关键帧序号
   size_t keyCloudInd = 0;
 
+  // 存放本地坐标系的点云
   std::vector<PointCloud::Ptr> cloud_vec;
+  // 存放优化后的位姿
   std::vector<Eigen::Affine3d> pose_vec;
+  // 存放原始位姿
   std::vector<Eigen::Affine3d> origin_pose_vec;
+  // 存放关键帧位姿
   std::vector<Eigen::Affine3d> key_pose_vec;
+  // 存放闭环匹配的关键帧
   std::vector<std::pair<int, int>> loop_container;
 
+  // 累计点云成为关键帧
   PointCloud::Ptr key_cloud(new PointCloud);
 
+  // 标记是否发生闭环
   bool has_loop_flag = false;
+  // 保存 iSAM2 优化后的原始结果
   gtsam::Values curr_estimate;
 
+  // 没用
   Eigen::Affine3d last_pose;
   last_pose.setIdentity();
   while (ros::ok()) {
@@ -255,15 +272,24 @@ int main(int argc, char **argv) {
     PointCloud::Ptr current_cloud_body(new PointCloud);
     PointCloud::Ptr current_cloud_world(new PointCloud);
     Eigen::Affine3d pose;
+
+    // 获取同步的点云和位姿
     if (syncPackages(current_cloud_body, pose)) {
       auto origin_estimate_affine3d = pose;
+
+      // 转换点云到世界坐标系
       pcl::transformPointCloud(*current_cloud_body, *current_cloud_world, pose);
+
+      // 降采样
       down_sampling_voxel(*current_cloud_world, config_setting.ds_size_);
-      // down sample body cloud
       down_sampling_voxel(*current_cloud_body, 0.5);
+
+      // 保存点云和位姿
       cloud_vec.push_back(current_cloud_body);
       pose_vec.push_back(pose);
       origin_pose_vec.push_back(pose);
+
+      // 再转一份到世界坐标系，并发送
       PointCloud origin_cloud;
       pcl::transformPointCloud(*current_cloud_body, origin_cloud,
                                origin_estimate_affine3d);
@@ -272,6 +298,7 @@ int main(int argc, char **argv) {
       pub_cloud.header.frame_id = "camera_init";
       pubOriginCloud.publish(pub_cloud);
 
+      // 发送原始位姿
       Eigen::Quaterniond _r(origin_estimate_affine3d.rotation());
       nav_msgs::Odometry odom;
       odom.header.frame_id = "camera_init";
@@ -284,13 +311,18 @@ int main(int argc, char **argv) {
       odom.pose.pose.orientation.z = _r.z();
       pubOdomOrigin.publish(odom);
 
+      // 累积当前点云到关键帧（世界坐标系，降采样处理）
       *key_cloud += *current_cloud_world;
+
+      // 保存当前点云的位姿为优化的初始值
       initial.insert(cloudInd, gtsam::Pose3(pose.matrix()));
 
       if (!cloudInd) {
+        // 若为第一帧，添加先验因子
         graph.add(gtsam::PriorFactor<gtsam::Pose3>(
             0, gtsam::Pose3(pose.matrix()), odometryNoise));
       } else {
+        // 添加里程计因子
         auto prev_pose = gtsam::Pose3(origin_pose_vec[cloudInd - 1].matrix());
         auto curr_pose = gtsam::Pose3(pose.matrix());
         graph.add(gtsam::BetweenFactor<gtsam::Pose3>(
@@ -302,44 +334,54 @@ int main(int argc, char **argv) {
       if (cloudInd % config_setting.sub_frame_num_ == 0 && cloudInd != 0) {
         ROS_INFO("key frame idx: [%d], key cloud size: [%d]", (int)keyCloudInd,
                  (int)key_cloud->size());
-        // step1. Descriptor Extraction
+        // 提取 STD 特征
         std::vector<STDesc> stds_vec;
         std_manager->GenerateSTDescs(key_cloud, stds_vec);
 
-        // step2. Searching Loop
+        // 回环匹配的关键帧索引，以及匹配得分 = 匹配的特征数 / 总特征数
         std::pair<int, double> search_result(-1, 0);
+        // 回环变换
         std::pair<Eigen::Vector3d, Eigen::Matrix3d> loop_transform;
         loop_transform.first << 0, 0, 0;
         loop_transform.second = Eigen::Matrix3d::Identity();
+        // 回环匹配的特征对
         std::vector<std::pair<STDesc, STDesc>> loop_std_pair;
 
         if (keyCloudInd > config_setting.skip_near_num_) {
+          // 若关键帧数量大于跳帧数，开始回环检测
           std_manager->SearchLoop(stds_vec, search_result, loop_transform,
                                   loop_std_pair);
         }
 
-        // step3. Add descriptors to the database
+        // 保存 STD 特征
         std_manager->AddSTDescs(stds_vec);
 
-        // publish
+        // 发布关键帧点云
         sensor_msgs::PointCloud2 pub_cloud;
         pcl::toROSMsg(*key_cloud, pub_cloud);
         pub_cloud.header.frame_id = "camera_init";
         pubCurrentCloud.publish(pub_cloud);
+
+        // 发布关键帧特征点云
         pcl::toROSMsg(*std_manager->corner_cloud_vec_.back(), pub_cloud);
         pub_cloud.header.frame_id = "camera_init";
         pubCurrentCorner.publish(pub_cloud);
 
+        // 保存关键帧点云
         std_manager->key_cloud_vec_.push_back(key_cloud->makeShared());
 
+        // 如果检测到闭环
+        // 但也存在下标为 0 的情况把？？？？
         if (search_result.first > 0) {
           std::cout << "[Loop Detection] triggle loop: " << keyCloudInd << "--"
                     << search_result.first << ", score:" << search_result.second
                     << std::endl;
 
+          // 若检测到闭环，则标记为检测到闭环
           has_loop_flag = true;
+          // 记录闭环匹配的关键帧索引
           int match_frame = search_result.first;
-          // obtain optimal transform
+          // 使用 ceres 优化回环变换，比上面只跑一边 ICP 效果好
           std_manager->PlaneGeomrtricIcp(
               std_manager->plane_cloud_vec_.back(),
               std_manager->plane_cloud_vec_[match_frame], loop_transform);
@@ -360,22 +402,37 @@ int main(int argc, char **argv) {
             between each sub frame, 51-11, 52-12,...,60-20.
 
           */
+          // STDesc 有自己的 id 计数，因此下面的 id 都需要转换才能用
+
+          // 当前关键帧的子帧数量
           int sub_frame_num = config_setting.sub_frame_num_;
+
+          // 添加两个关键帧之间的子帧约束
           for (size_t j = 1; j <= sub_frame_num; j++) {
+
+            // 当前关键帧点云的子帧id
             int src_frame = cloudInd + j - sub_frame_num;
 
+            // 两帧之间的变换
             auto delta_T = Eigen::Affine3d::Identity();
             delta_T.translate(loop_transform.first);
             delta_T.rotate(loop_transform.second);
+
+            // 优化后的当前帧位姿
             Eigen::Affine3d src_pose_refined = delta_T * pose_vec[src_frame];
 
+            // 目标点云的id，tar：target 
             int tar_frame = match_frame * sub_frame_num + j;
+
+            // 目标点云的位姿
             // old
             // Eigen::Affine3d tar_pose = pose_vec[tar_frame];
             Eigen::Affine3d tar_pose = origin_pose_vec[tar_frame];
 
+            // 保存闭环匹配的索引对
             loop_container.push_back({tar_frame, src_frame});
 
+            // 添加闭环因子
             graph.add(gtsam::BetweenFactor<gtsam::Pose3>(
                 tar_frame, src_frame,
                 gtsam::Pose3(tar_pose.matrix())
@@ -383,11 +440,13 @@ int main(int argc, char **argv) {
                 robustLoopNoise));
           }
 
+          // 发布闭环匹配的目标点云
           pcl::toROSMsg(*std_manager->key_cloud_vec_[search_result.first],
                         pub_cloud);
           pub_cloud.header.frame_id = "camera_init";
           pubMatchedCloud.publish(pub_cloud);
 
+          // 发布闭环匹配的目标特征点云
           pcl::toROSMsg(*std_manager->corner_cloud_vec_[search_result.first],
                         pub_cloud);
           pub_cloud.header.frame_id = "camera_init";
@@ -395,13 +454,18 @@ int main(int argc, char **argv) {
           publish_std_pairs(loop_std_pair, pubSTD);
         }
 
+        // 清空关键帧点云
         key_cloud->clear();
+        // 关键帧索引 + 1
         ++keyCloudInd;
       }
+
+      // 优化因子图
       isam.update(graph, initial);
       isam.update();
 
       if (has_loop_flag) {
+        // 如果检测到闭环，多优化几次
         isam.update();
         isam.update();
         isam.update();
@@ -409,28 +473,37 @@ int main(int argc, char **argv) {
         isam.update();
       }
 
+      // 清空因子图和初始值，iSAM2 内部已经把东西都保存好了
+      // 这里清空也没问题
       graph.resize(0);
       initial.clear();
 
+      // 获取优化后的位姿
       curr_estimate = isam.calculateEstimate();
+      // 更新位姿
       update_poses(curr_estimate, pose_vec);
 
+      // 没用
       auto latest_estimate_affine3d = pose_vec.back();
 
       if (has_loop_flag) {
-        // publish correct cloud map
+        // 如果发生了闭环，则重新发布地图
         PointCloud full_map;
+
+        // 将所有点云重新转换到世界坐标系并累积到 full_map
         for (int i = 0; i < pose_vec.size(); ++i) {
           PointCloud correct_cloud;
           pcl::transformPointCloud(*cloud_vec[i], correct_cloud, pose_vec[i]);
           full_map += correct_cloud;
         }
+
+        // 发布 full_map
         sensor_msgs::PointCloud2 pub_cloud;
         pcl::toROSMsg(full_map, pub_cloud);
         pub_cloud.header.frame_id = "camera_init";
         pubCorrectCloud.publish(pub_cloud);
 
-        // publish corerct path
+        // 发布矫正过的位姿
         nav_msgs::Path correct_path;
         for (int i = 0; i < pose_vec.size(); i += 1) {
 
