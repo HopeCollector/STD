@@ -202,6 +202,7 @@ public:
     }
     plane_ptr_ = new Plane;
   }
+  // 使用 PCA 提取平面
   void init_plane();
   void init_octo_tree();
 };

@@ -433,30 +433,45 @@ void STDescManager::init_voxel_map(
     const pcl::PointCloud<pcl::PointXYZI>::Ptr &input_cloud,
     std::unordered_map<VOXEL_LOC, OctoTree *> &voxel_map) {
   uint plsize = input_cloud->size();
+
+  // 将点云中的所有点分别保存到体素中
   for (uint i = 0; i < plsize; i++) {
+    // 提取当前点到 p_c
     Eigen::Vector3d p_c(input_cloud->points[i].x, input_cloud->points[i].y,
                         input_cloud->points[i].z);
+
+    // 计算体素坐标
     double loc_xyz[3];
     for (int j = 0; j < 3; j++) {
       loc_xyz[j] = p_c[j] / config_setting_.voxel_size_;
       if (loc_xyz[j] < 0) {
+        // 负数取整会向上取整，所以负数的话要减一
         loc_xyz[j] -= 1.0;
       }
     }
+
+    // 体素坐标
     VOXEL_LOC position((int64_t)loc_xyz[0], (int64_t)loc_xyz[1],
                        (int64_t)loc_xyz[2]);
     auto iter = voxel_map.find(position);
     if (iter != voxel_map.end()) {
+      // 如果这个体素已经有点了，就把这个点的坐标加上去
       voxel_map[position]->voxel_points_.push_back(p_c);
     } else {
+      // 如果这个体素还没有点，就 OctoTree 来保存点
       OctoTree *octo_tree = new OctoTree(config_setting_);
       voxel_map[position] = octo_tree;
       voxel_map[position]->voxel_points_.push_back(p_c);
     }
   }
+
+  // 为加速 OctorTree 初始化做准备
+  // 体素地图迭代器的数组
   std::vector<std::unordered_map<VOXEL_LOC, OctoTree *>::iterator> iter_list;
+  // 迭代器序号
   std::vector<size_t> index;
   size_t i = 0;
+  // 给所有迭代器配一个序号
   for (auto iter = voxel_map.begin(); iter != voxel_map.end(); ++iter) {
     index.push_back(i);
     i++;
@@ -468,6 +483,7 @@ void STDescManager::init_voxel_map(
   //   std::cout << "omp num:" << MP_PROC_NUM << std::endl;
   // #pragma omp parallel for
   // #endif
+  // 初始化 octo tree
   for (int i = 0; i < index.size(); i++) {
     iter_list[i]->second->init_octo_tree();
   }
@@ -1648,22 +1664,31 @@ void STDescManager::PlaneGeomrtricIcp(
 }
 
 void OctoTree::init_plane() {
+  // 初始化成员
   plane_ptr_->covariance_ = Eigen::Matrix3d::Zero();
   plane_ptr_->center_ = Eigen::Vector3d::Zero();
   plane_ptr_->normal_ = Eigen::Vector3d::Zero();
   plane_ptr_->points_size_ = voxel_points_.size();
   plane_ptr_->radius_ = 0;
+
+  // 计算点云中心
   for (auto pi : voxel_points_) {
     plane_ptr_->covariance_ += pi * pi.transpose();
     plane_ptr_->center_ += pi;
   }
   plane_ptr_->center_ = plane_ptr_->center_ / plane_ptr_->points_size_;
+
+  // 计算协方差矩阵
   plane_ptr_->covariance_ =
       plane_ptr_->covariance_ / plane_ptr_->points_size_ -
       plane_ptr_->center_ * plane_ptr_->center_.transpose();
+  
+  // 特征值分解
   Eigen::EigenSolver<Eigen::Matrix3d> es(plane_ptr_->covariance_);
   Eigen::Matrix3cd evecs = es.eigenvectors();
   Eigen::Vector3cd evals = es.eigenvalues();
+
+  // 提取法向量对应的索引
   Eigen::Vector3d evalsReal;
   evalsReal = evals.real();
   Eigen::Matrix3d::Index evalsMin, evalsMax;
@@ -1671,28 +1696,37 @@ void OctoTree::init_plane() {
   evalsReal.rowwise().sum().maxCoeff(&evalsMax);
   int evalsMid = 3 - evalsMin - evalsMax;
   if (evalsReal(evalsMin) < config_setting_.plane_detection_thre_) {
+    // 提取法向量
     plane_ptr_->normal_ << evecs.real()(0, evalsMin), evecs.real()(1, evalsMin),
         evecs.real()(2, evalsMin);
+    // 保存最小特征值（对应法向量）
     plane_ptr_->min_eigen_value_ = evalsReal(evalsMin);
+    // 保存平面覆盖范围 （没用上）
     plane_ptr_->radius_ = sqrt(evalsReal(evalsMax));
+    // 标记为平面
     plane_ptr_->is_plane_ = true;
 
+    // 计算截距（没用上）
     plane_ptr_->intercept_ = -(plane_ptr_->normal_(0) * plane_ptr_->center_(0) +
                                plane_ptr_->normal_(1) * plane_ptr_->center_(1) +
                                plane_ptr_->normal_(2) * plane_ptr_->center_(2));
+    // 记录点云中心（平面点）
     plane_ptr_->p_center_.x = plane_ptr_->center_(0);
     plane_ptr_->p_center_.y = plane_ptr_->center_(1);
     plane_ptr_->p_center_.z = plane_ptr_->center_(2);
+    // 记录法向量  
     plane_ptr_->p_center_.normal_x = plane_ptr_->normal_(0);
     plane_ptr_->p_center_.normal_y = plane_ptr_->normal_(1);
     plane_ptr_->p_center_.normal_z = plane_ptr_->normal_(2);
   } else {
+    // 若最小特征值不满足阈值，则不是平面
     plane_ptr_->is_plane_ = false;
   }
 }
 
 void OctoTree::init_octo_tree() {
   if (voxel_points_.size() > config_setting_.voxel_init_num_) {
+    // 若点数大于阈值，则计算体素平面
     init_plane();
   }
 }
