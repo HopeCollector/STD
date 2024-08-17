@@ -497,7 +497,9 @@ void STDescManager::build_connection(
     std::unordered_map<VOXEL_LOC, OctoTree *> &voxel_map) {
   for (auto iter = voxel_map.begin(); iter != voxel_map.end(); iter++) {
     if (iter->second->plane_ptr_->is_plane_) {
+      // 若当前体素是平面体素，则开始处理
       OctoTree *current_octo = iter->second;
+      // 向 6 个方向进行探索
       for (int i = 0; i < 6; i++) {
         VOXEL_LOC neighbor = iter->first;
         if (i == 0) {
@@ -515,40 +517,58 @@ void STDescManager::build_connection(
         }
         auto near = voxel_map.find(neighbor);
         if (near == voxel_map.end()) {
+          // 若邻居体素不存在，则标记这个方向检查过，但不连接
           current_octo->is_check_connect_[i] = true;
           current_octo->connect_[i] = false;
         } else {
           if (!current_octo->is_check_connect_[i]) {
+            // 若这个方向没有检查过，则检查
             OctoTree *near_octo = near->second;
+            // 标记这个方向检查过
             current_octo->is_check_connect_[i] = true;
+            // 计算自己相对与邻居的方向
             int j;
             if (i >= 3) {
               j = i - 3;
             } else {
               j = i + 3;
             }
+            // 标记邻居朝向自己的这个方向检查过
             near_octo->is_check_connect_[j] = true;
             if (near_octo->plane_ptr_->is_plane_) {
               // merge near octo
+              // 若邻居是平面，则进一步检查是否可以连接
+
+              // 计算法向量的差值
               Eigen::Vector3d normal_diff = current_octo->plane_ptr_->normal_ -
                                             near_octo->plane_ptr_->normal_;
+              // 计算法向量的和（防止法向量出现反向的情况）
               Eigen::Vector3d normal_add = current_octo->plane_ptr_->normal_ +
                                            near_octo->plane_ptr_->normal_;
+
+              // 参见 Prob 2. in STDEquations.ipynb
+              // 差值的模长为 0.5 时，两个法向量的夹角大概是 29°
               if (normal_diff.norm() <
                       config_setting_.plane_merge_normal_thre_ ||
                   normal_add.norm() <
                       config_setting_.plane_merge_normal_thre_) {
+                // 若两个法向量足够接近，则标记自己和邻居在相互的方向上连接
                 current_octo->connect_[i] = true;
                 near_octo->connect_[j] = true;
+                // 并记录连接的体素
                 current_octo->connect_tree_[i] = near_octo;
                 near_octo->connect_tree_[j] = current_octo;
               } else {
+                // 若两个法向量不接近，则不连接
                 current_octo->connect_[i] = false;
                 near_octo->connect_[j] = false;
               }
             } else {
+              // 若邻居不是平面，则自己不连接邻居
               current_octo->connect_[i] = false;
+              // 但邻居连接自己
               near_octo->connect_[j] = true;
+              // 同时让邻居记录自己这个体素
               near_octo->connect_tree_[j] = current_octo;
             }
           }

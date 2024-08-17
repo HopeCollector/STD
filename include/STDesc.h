@@ -325,6 +325,7 @@ private:
   void build_connection(std::unordered_map<VOXEL_LOC, OctoTree *> &feat_map);
 
   // acquire planes from voxel_map
+  // 只保存平面的中心点和法向量
   void getPlane(const std::unordered_map<VOXEL_LOC, OctoTree *> &voxel_map,
                 pcl::PointCloud<pcl::PointXYZINormal>::Ptr &plane_cloud);
 
