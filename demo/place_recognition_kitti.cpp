@@ -205,5 +205,28 @@ int main(int argc, char **argv) {
             << "ms, update: " << mean_update_time << "ms, total: "
             << mean_descriptor_time + mean_query_time + mean_update_time << "ms"
             << std::endl;
+
+  std::ofstream time_file("/tmp/std_time.csv");
+  if (!time_file.is_open()) {
+    std::cerr << "Failed to open file." << std::endl;
+    return 1;
+  }
+
+  for (const auto& time : descriptor_time) {
+    time_file << time << " ";
+  }
+  time_file << std::endl;
+
+  for (const auto& time : querying_time) {
+    time_file << time << " ";
+  }
+  time_file << std::endl;
+
+  for (const auto& time : update_time) {
+    time_file << time << " ";
+  }
+  time_file << std::endl;
+
+  time_file.close();
   return 0;
 }
