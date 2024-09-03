@@ -69,6 +69,7 @@ int main(int argc, char **argv) {
   std::vector<double> descriptor_time;
   std::vector<double> querying_time;
   std::vector<double> update_time;
+  std::vector<double> score;
   int triggle_loop_num = 0;
   while (ros::ok()) {
     std::stringstream lidar_data_path;
@@ -123,6 +124,7 @@ int main(int argc, char **argv) {
         std::cout << "[Loop Detection] triggle loop: " << keyCloudInd << "--"
                   << search_result.first << ", score:" << search_result.second
                   << std::endl;
+        score.push_back(search_result.second);
       }
       auto t_query_end = std::chrono::high_resolution_clock::now();
       querying_time.push_back(time_inc(t_query_end, t_query_begin));
@@ -224,6 +226,11 @@ int main(int argc, char **argv) {
 
   for (const auto& time : update_time) {
     time_file << time << " ";
+  }
+  time_file << std::endl;
+
+  for (const auto& s : score) {
+    time_file << s << " ";
   }
   time_file << std::endl;
 
