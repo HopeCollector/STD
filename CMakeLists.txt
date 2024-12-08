@@ -100,3 +100,4 @@ target_link_libraries(kitti
   ${CERES_LIBRARIES}
   expr-utils::dataloader)
 install(TARGETS kitti DESTINATION lib/${PROJECT_NAME})
+install(DIRECTORY config DESTINATION share/${PROJECT_NAME})
