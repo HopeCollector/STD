@@ -33,7 +33,7 @@
   <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>std_msgs</exec_depend>
   <exec_depend>tf_conversions</exec_depend>
-
+  <depend>expr-utils</depend>
 
   <!-- The export tag contains other, unspecified, tags -->
   <export>

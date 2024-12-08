@@ -90,3 +90,13 @@ target_link_libraries(online_demo
         ${OpenCV_LIBS}
         ${CERES_LIBRARIES}
         gtsam)
+
+find_package(expr-utils REQUIRED)
+add_executable(kitti expr/kitti.cc src/STDesc.cpp)
+target_link_libraries(kitti
+  ${catkin_LIBRARIES}
+  ${PCL_LIBRARIES}
+  ${OpenCV_LIBS}
+  ${CERES_LIBRARIES}
+  expr-utils::dataloader)
+install(TARGETS kitti DESTINATION lib/${PROJECT_NAME})
