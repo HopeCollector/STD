@@ -69,6 +69,7 @@ int main(int argc, char **argv) {
   std::vector<double> descriptor_time;
   std::vector<double> querying_time;
   std::vector<double> update_time;
+  std::vector<std::string> pairs;
   int triggle_loop_num = 0;
   while (ros::ok()) {
     std::stringstream lidar_data_path;
@@ -123,6 +124,9 @@ int main(int argc, char **argv) {
         std::cout << "[Loop Detection] triggle loop: " << keyCloudInd << "--"
                   << search_result.first << ", score:" << search_result.second
                   << std::endl;
+        std::stringstream ss;
+        ss << keyCloudInd << "--" << search_result.first;
+        pairs.push_back(ss.str());
       }
       auto t_query_end = std::chrono::high_resolution_clock::now();
       querying_time.push_back(time_inc(t_query_end, t_query_begin));
@@ -204,5 +208,15 @@ int main(int argc, char **argv) {
             << "ms, update: " << mean_update_time << "ms, total: "
             << mean_descriptor_time + mean_query_time + mean_update_time << "ms"
             << std::endl;
+  
+  std::ofstream pairs_file("/workspace/origin");
+  if (pairs_file.is_open()) {
+    for (const auto &pair : pairs) {
+      pairs_file << pair << std::endl;
+    }
+    pairs_file.close();
+  } else {
+    std::cerr << "Unable to open file to save pairs" << std::endl;
+  }
   return 0;
 }
