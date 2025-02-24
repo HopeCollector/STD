@@ -1,9 +1,9 @@
 #include <nav_msgs/Odometry.h>
 #include <pcl_conversions/pcl_conversions.h>
 #include <yaml-cpp/yaml.h>
-#include <filesystem>
 
 #include <expr-utils/data_loader.hh>
+#include <filesystem>
 
 #include "cli11.hh"
 #include "include/STDesc.h"
@@ -17,79 +17,94 @@ std::string calib_path{""};
 std::string config_path{""};
 std::string output_path{""};
 
-void parse_param(int argc, char **argv) {
+int parse_param(int argc, char **argv) {
   CLI::App app{"STDesc expriement"};
-  app.add_option("-d,--dataset", dataset_type,
-                 "Dataset type [kitti kaist wild nclt rosbag]")
-      ->required();
-  app.add_option("-l,--lidar", lidar_path, "Path to the lidar data")
-      ->required();
-  app.add_option("-p,--pose", pose_path, "Path to the pose data")->required();
   app.add_option("-c,--config", config_path, "Path to the config file")
       ->required();
-  app.add_option("-o,--output", output_path, "Path to the output file")
-      ->required();
-  app.add_option("-k,--calib", calib_path, "Path to the calibration file");
-  app.parse(argc, argv);
-
-  // check if the output path is a directory
-  if (!fs::is_directory(output_path)) {
-    throw std::runtime_error("Output path must be a directory");
-  } else if (output_path.back() != '/') {
-    output_path += "/";
-  }
-
-  // append the current time to the output path
-  auto t = std::time(nullptr);
-  auto tm = *std::localtime(&t);
-  std::ostringstream oss;
-  oss << output_path << std::put_time(&tm, "%Y-%m-%d_%H-%M-%S");
-  output_path = oss.str();
-
+  CLI11_PARSE(app, argc, argv);
+  return 0;
 }
 
 ConfigSetting load_config() {
   ConfigSetting setting;
   YAML::Node config = YAML::LoadFile(config_path);
 
+  // dataset
+  dataset_type = config["dataset"].as<std::string>();
+  lidar_path = config["lidar"].as<std::string>();
+  pose_path = config["pose"].as<std::string>();
+  calib_path = config["calib"].as<std::string>();
+  output_path = config["output"].as<std::string>();
+
+  // verify the output path
+  fs::path output_parent = fs::path(output_path).parent_path();
+  if (!fs::exists(output_parent)) {
+    // check if the parent directory exists
+    throw std::runtime_error(output_parent.string() + " does not exist");
+  }
+  if (fs::is_directory(output_path)) {
+    // check if the output path is a directory
+    if (output_path.back() != '/') {
+      output_path += "/";
+    }
+    // append the current time to the output path
+    auto t = std::time(nullptr);
+    auto tm = *std::localtime(&t);
+    std::ostringstream oss;
+    oss << output_path << std::put_time(&tm, "%Y-%m-%d_%H-%M-%S");
+    output_path = oss.str();
+  }
+
   // pre-process
   setting.ds_size_ = config["ds_size"].as<double>(0.5);
   setting.maximum_corner_num_ = config["maximum_corner_num"].as<int>(100);
+  std::cout << "pre-process" << std::endl;
 
   // key points
-  setting.plane_merge_normal_thre_ = config["plane_merge_normal_thre"].as<double>(0.1);
-  setting.plane_detection_thre_ = config["plane_detection_thre"].as<double>(0.01);
+  setting.plane_merge_normal_thre_ =
+      config["plane_merge_normal_thre"].as<double>(0.1);
+  setting.plane_detection_thre_ =
+      config["plane_detection_thre"].as<double>(0.01);
   setting.voxel_size_ = config["voxel_size"].as<double>(2.0);
   setting.voxel_init_num_ = config["voxel_init_num"].as<int>(10);
-  setting.proj_image_resolution_ = config["proj_image_resolution"].as<double>(0.5);
+  setting.proj_image_resolution_ =
+      config["proj_image_resolution"].as<double>(0.5);
   setting.proj_dis_min_ = config["proj_dis_min"].as<double>(0);
   setting.proj_dis_max_ = config["proj_dis_max"].as<double>(2);
   setting.corner_thre_ = config["corner_thre"].as<double>(10);
+  std::cout << "key points" << std::endl;
 
   // std descriptor
   setting.descriptor_near_num_ = config["descriptor_near_num"].as<int>(10);
   setting.descriptor_min_len_ = config["descriptor_min_len"].as<double>(2);
   setting.descriptor_max_len_ = config["descriptor_max_len"].as<double>(50);
-  setting.non_max_suppression_radius_ = config["non_max_suppression_radius"].as<double>(2.0);
+  setting.non_max_suppression_radius_ =
+      config["non_max_suppression_radius"].as<double>(2.0);
   setting.std_side_resolution_ = config["std_side_resolution"].as<double>(0.2);
+  std::cout << "std descriptor" << std::endl;
 
   // candidate search
   setting.skip_near_num_ = config["skip_near_num"].as<int>(50);
   setting.candidate_num_ = config["candidate_num"].as<int>(50);
   setting.sub_frame_num_ = config["sub_frame_num"].as<int>(10);
   setting.rough_dis_threshold_ = config["rough_dis_threshold"].as<double>(0.01);
-  setting.vertex_diff_threshold_ = config["vertex_diff_threshold"].as<double>(0.5);
+  setting.vertex_diff_threshold_ =
+      config["vertex_diff_threshold"].as<double>(0.5);
   setting.icp_threshold_ = config["icp_threshold"].as<double>(0.5);
   setting.normal_threshold_ = config["normal_threshold"].as<double>(0.2);
   setting.dis_threshold_ = config["dis_threshold"].as<double>(0.5);
+  std::cout << "candidate search" << std::endl;
 
   std::cout << "Successfully loaded parameters:" << std::endl;
-  std::cout << "----------------Main Parameters-------------------" << std::endl;
+  std::cout << "----------------Main Parameters-------------------"
+            << std::endl;
   std::cout << "voxel size: " << setting.voxel_size_ << std::endl;
-  std::cout << "loop detection threshold: " << setting.icp_threshold_ << std::endl;
+  std::cout << "loop detection threshold: " << setting.icp_threshold_
+            << std::endl;
   std::cout << "sub-frame number: " << setting.sub_frame_num_ << std::endl;
   std::cout << "candidate number: " << setting.candidate_num_ << std::endl;
-  std::cout << "maximum corners size: " << setting.maximum_corner_num_ << std::endl;
+  std::cout << "maximum corners size: " << setting.maximum_corner_num_
+            << std::endl;
 
   return setting;
 }
