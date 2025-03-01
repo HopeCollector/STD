@@ -52,7 +52,6 @@ void down_sampling_voxel(pcl::PointCloud<pcl::PointXYZI> &pl_feat,
 }
 
 void read_parameters(ros::NodeHandle &nh, ConfigSetting &config_setting) {
-
   // pre-preocess
   nh.param<double>("ds_size", config_setting.ds_size_, 0.5);
   nh.param<int>("maximum_corner_num", config_setting.maximum_corner_num_, 100);
@@ -308,7 +307,6 @@ void publish_std_pairs(
 void STDescManager::GenerateSTDescs(
     pcl::PointCloud<pcl::PointXYZI>::Ptr &input_cloud,
     std::vector<STDesc> &stds_vec) {
-
   // step1, voxelization and plane dection
   std::unordered_map<VOXEL_LOC, OctoTree *> voxel_map;
   init_voxel_map(input_cloud, voxel_map);
@@ -346,7 +344,6 @@ void STDescManager::SearchLoop(
     const std::vector<STDesc> &stds_vec, std::pair<int, double> &loop_result,
     std::pair<Eigen::Vector3d, Eigen::Matrix3d> &loop_transform,
     std::vector<std::pair<STDesc, STDesc>> &loop_std_pair) {
-
   if (stds_vec.size() == 0) {
     ROS_ERROR_STREAM("No STDescs!");
     loop_result = std::pair<int, double>(-1, 0);
@@ -384,15 +381,19 @@ void STDescManager::SearchLoop(
   //           << " ms, candidate verify: " << time_inc(t3, t2) << "ms"
   //           << std::endl;
 
-  if (best_score > config_setting_.icp_threshold_) {
-    loop_result = std::pair<int, double>(best_candidate_id, best_score);
-    loop_transform = best_transform;
-    loop_std_pair = best_sucess_match_vec;
-    return;
-  } else {
-    loop_result = std::pair<int, double>(-1, 0);
-    return;
-  }
+  // if (best_score > config_setting_.icp_threshold_) {
+  //   loop_result = std::pair<int, double>(best_candidate_id, best_score);
+  //   loop_transform = best_transform;
+  //   loop_std_pair = best_sucess_match_vec;
+  //   return;
+  // } else {
+  //   loop_result = std::pair<int, double>(-1, 0);
+  //   return;
+  // }
+  loop_result = std::pair<int, double>(best_candidate_id, best_score);
+  loop_transform = best_transform;
+  loop_std_pair = best_sucess_match_vec;
+  return;
 }
 
 void STDescManager::AddSTDescs(const std::vector<STDesc> &stds_vec) {
@@ -553,7 +554,6 @@ void STDescManager::corner_extractor(
     std::unordered_map<VOXEL_LOC, OctoTree *> &voxel_map,
     const pcl::PointCloud<pcl::PointXYZI>::Ptr &input_cloud,
     pcl::PointCloud<pcl::PointXYZINormal>::Ptr &corner_points) {
-
   pcl::PointCloud<pcl::PointXYZINormal>::Ptr prepare_corner_points(
       new pcl::PointCloud<pcl::PointXYZINormal>);
 
@@ -667,7 +667,6 @@ void STDescManager::extract_corner(
     const Eigen::Vector3d &proj_center, const Eigen::Vector3d proj_normal,
     const std::vector<Eigen::Vector3d> proj_points,
     pcl::PointCloud<pcl::PointXYZINormal>::Ptr &corner_points) {
-
   double resolution = config_setting_.proj_image_resolution_;
   double dis_threshold_min = config_setting_.proj_dis_min_;
   double dis_threshold_max = config_setting_.proj_dis_max_;
@@ -1310,8 +1309,8 @@ void STDescManager::triangle_solver(std::pair<STDesc, STDesc> &std_pair,
   ref.col(1) = std_pair.second.vertex_B_ - std_pair.second.center_;
   ref.col(2) = std_pair.second.vertex_C_ - std_pair.second.center_;
   Eigen::Matrix3d covariance = src * ref.transpose();
-  Eigen::JacobiSVD<Eigen::MatrixXd> svd(covariance, Eigen::ComputeThinU |
-                                                        Eigen::ComputeThinV);
+  Eigen::JacobiSVD<Eigen::MatrixXd> svd(
+      covariance, Eigen::ComputeThinU | Eigen::ComputeThinV);
   Eigen::Matrix3d V = svd.matrixV();
   Eigen::Matrix3d U = svd.matrixU();
   rot = V * U.transpose();

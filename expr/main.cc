@@ -109,6 +109,26 @@ ConfigSetting load_config() {
   return setting;
 }
 
+struct LoopResult {
+  size_t key_frame_id;
+  size_t loop_frame_id;
+  double score;
+  Eigen::Vector3d center;
+
+  LoopResult(size_t key_frame_id, size_t loop_frame_id, double score)
+      : key_frame_id(key_frame_id),
+        loop_frame_id(loop_frame_id),
+        score(score),
+        center() {}
+
+  friend std::ostream &operator<<(std::ostream &os, const LoopResult &res) {
+    os << res.key_frame_id << "," << res.loop_frame_id << "," << res.score
+       << "," << res.center.x() << "," << res.center.y() << ","
+       << res.center.z();
+    return os;
+  }
+};
+
 int main(int argc, char **argv) {
   // parse parameters
   parse_param(argc, argv);
@@ -129,7 +149,7 @@ int main(int argc, char **argv) {
   std::vector<double> descriptor_time;
   std::vector<double> querying_time;
   std::vector<double> update_time;
-  std::vector<std::string> pairs;
+  std::vector<LoopResult> reses;
   int triggle_loop_num = 0;
   while (true) {
     auto current_cloud = loader->next(true);
@@ -159,14 +179,19 @@ int main(int argc, char **argv) {
       if (keyCloudInd > setting.skip_near_num_) {
         std_manager->SearchLoop(stds_vec, search_result, loop_transform,
                                 loop_std_pair);
-      }
-      if (search_result.first > 0) {
-        std::cout << "[Loop Detection] triggle loop: " << keyCloudInd << "--"
-                  << search_result.first << ", score:" << search_result.second
-                  << std::endl;
-        std::stringstream ss;
-        ss << keyCloudInd << "," << search_result.first;
-        pairs.push_back(ss.str());
+        if (search_result.second > 1e-3) {
+          reses.emplace_back(keyCloudInd, size_t(search_result.first),
+                             search_result.second);
+          auto &res = reses.back();
+          auto cld = std_manager->key_cloud_vec_[search_result.first];
+          for (const auto &p : cld->points) {
+            res.center += p.getVector3fMap().cast<double>();
+          }
+          for (const auto &p : temp_cloud->points) {
+            res.center += p.getVector3fMap().cast<double>();
+          }
+          res.center /= cld->size() + temp_cloud->size();
+        }
       }
       auto t_query_end = std::chrono::high_resolution_clock::now();
       querying_time.push_back(time_inc(t_query_end, t_query_begin));
@@ -218,12 +243,16 @@ int main(int argc, char **argv) {
             << mean_descriptor_time + mean_query_time + mean_update_time << "ms"
             << std::endl;
 
-  std::ofstream pairs_file(output_path);
-  if (pairs_file.is_open()) {
-    for (const auto &pair : pairs) {
-      pairs_file << pair << std::endl;
+  std::ofstream resf(output_path);
+  if (resf.is_open()) {
+    std::sort(reses.begin(), reses.end(),
+              [](const LoopResult &a, const LoopResult &b) {
+                return a.score > b.score;
+              });
+    for (const auto &res : reses) {
+      resf << res << std::endl;
     }
-    pairs_file.close();
+    resf.close();
   } else {
     std::cerr << "Unable to open file to save pairs" << std::endl;
   }
