@@ -1,4 +1,5 @@
 #include <nav_msgs/Odometry.h>
+#include <pcl/common/common.h>
 #include <pcl_conversions/pcl_conversions.h>
 #include <yaml-cpp/yaml.h>
 
@@ -113,6 +114,7 @@ struct LoopResult {
   size_t key_frame_id;
   size_t loop_frame_id;
   double score;
+  double iou;
   Eigen::Vector3d center;
 
   LoopResult(size_t key_frame_id, size_t loop_frame_id, double score)
@@ -123,11 +125,31 @@ struct LoopResult {
 
   friend std::ostream &operator<<(std::ostream &os, const LoopResult &res) {
     os << res.key_frame_id << "," << res.loop_frame_id << "," << res.score
-       << "," << res.center.x() << "," << res.center.y() << ","
-       << res.center.z();
+       << "," << res.iou << "," << res.center.x() << "," << res.center.y()
+       << "," << res.center.z();
     return os;
   }
 };
+
+double iou(pcl::PointCloud<pcl::PointXYZI>::ConstPtr cld1,
+           pcl::PointCloud<pcl::PointXYZI>::ConstPtr cld2) {
+  pcl::PointXYZI min1, max1, min2, max2;
+  pcl::getMinMax3D(*cld1, min1, max1);
+  pcl::getMinMax3D(*cld2, min2, max2);
+
+  double x1 = std::max(min1.x, min2.x);
+  double x2 = std::min(max1.x, max2.x);
+  double y1 = std::max(min1.y, min2.y);
+  double y2 = std::min(max1.y, max2.y);
+  double z1 = std::max(min1.z, min2.z);
+  double z2 = std::min(max1.z, max2.z);
+
+  double inter =
+      std::max(0.0, x2 - x1) * std::max(0.0, y2 - y1) * std::max(0.0, z2 - z1);
+  double vol1 = (max1.x - min1.x) * (max1.y - min1.y) * (max1.z - min1.z);
+  double vol2 = (max2.x - min2.x) * (max2.y - min2.y) * (max2.z - min2.z);
+  return inter / (vol1 + vol2 - inter);
+}
 
 int main(int argc, char **argv) {
   // parse parameters
@@ -191,6 +213,7 @@ int main(int argc, char **argv) {
             res.center += p.getVector3fMap().cast<double>();
           }
           res.center /= cld->size() + temp_cloud->size();
+          res.iou = iou(cld, temp_cloud);
         }
       }
       auto t_query_end = std::chrono::high_resolution_clock::now();
