@@ -1,5 +1,6 @@
 #include <nav_msgs/Odometry.h>
 #include <pcl/common/common.h>
+#include <pcl/kdtree/kdtree_flann.h>
 #include <pcl_conversions/pcl_conversions.h>
 #include <yaml-cpp/yaml.h>
 
@@ -133,22 +134,32 @@ struct LoopResult {
 
 double iou(pcl::PointCloud<pcl::PointXYZI>::ConstPtr cld1,
            pcl::PointCloud<pcl::PointXYZI>::ConstPtr cld2) {
-  pcl::PointXYZI min1, max1, min2, max2;
-  pcl::getMinMax3D(*cld1, min1, max1);
-  pcl::getMinMax3D(*cld2, min2, max2);
+  pcl::KdTreeFLANN<pcl::PointXYZI> tree;
+  tree.setInputCloud(cld1);
+  std::vector<bool> marks1(cld1->size(), false);
+  std::vector<bool> marks2(cld2->size(), false);
 
-  double x1 = std::max(min1.x, min2.x);
-  double x2 = std::min(max1.x, max2.x);
-  double y1 = std::max(min1.y, min2.y);
-  double y2 = std::min(max1.y, max2.y);
-  double z1 = std::max(min1.z, min2.z);
-  double z2 = std::min(max1.z, max2.z);
+  // search the near points in 0.5m
+  for (size_t i = 0; i < cld2->size(); i++) {
+    const auto &p = cld2->at(i);
+    std::vector<int> indices;
+    std::vector<float> distances;
+    tree.radiusSearch(p, 0.5, indices, distances);
+    if (indices.empty()) {
+      continue;
+    }
+    // mark the indices
+    for (const auto &idx : indices) {
+      marks1[idx] = true;
+    }
+    marks2[i] = true;
+  }
 
-  double inter =
-      std::max(0.0, x2 - x1) * std::max(0.0, y2 - y1) * std::max(0.0, z2 - z1);
-  double vol1 = (max1.x - min1.x) * (max1.y - min1.y) * (max1.z - min1.z);
-  double vol2 = (max2.x - min2.x) * (max2.y - min2.y) * (max2.z - min2.z);
-  return inter / (vol1 + vol2 - inter);
+  // calculate the iou, no need to minus the intersection, because this is point
+  // num, not volume
+  size_t inter = std::count(marks1.begin(), marks1.end(), true) +
+                 std::count(marks2.begin(), marks2.end(), true);
+  return double(inter) / double(cld1->size() + cld2->size());
 }
 
 int main(int argc, char **argv) {
