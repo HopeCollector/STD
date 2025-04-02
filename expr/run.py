@@ -26,7 +26,8 @@ for _, seqs in dataset.items():
         param["idx_thd"] = 100
         param["iou_thd"] = 0.7
         param["rps"] = []
-        pickle.dump(param, open(param["analysis"], "wb"))
+        if not os.path.exists(param["analysis"]):
+            pickle.dump(param, open(param["analysis"], "wb"))
         params.append(param)
         cnt += 1
 
