@@ -116,6 +116,8 @@ struct LoopResult {
   size_t loop_frame_id;
   double score;
   double iou;
+  double t_desc = -1.0;
+  double t_query = -1.0;
   Eigen::Vector3d center;
 
   LoopResult(size_t key_frame_id, size_t loop_frame_id, double score)
@@ -127,7 +129,7 @@ struct LoopResult {
   friend std::ostream &operator<<(std::ostream &os, const LoopResult &res) {
     os << res.key_frame_id << "," << res.loop_frame_id << "," << res.score
        << "," << res.iou << "," << res.center.x() << "," << res.center.y()
-       << "," << res.center.z();
+       << "," << res.center.z() << "," << res.t_desc << "," << res.t_query;
     return os;
   }
 };
@@ -212,23 +214,25 @@ int main(int argc, char **argv) {
       if (keyCloudInd > setting.skip_near_num_) {
         std_manager->SearchLoop(stds_vec, search_result, loop_transform,
                                 loop_std_pair);
-        if (search_result.second > 1e-3) {
-          reses.emplace_back(keyCloudInd, size_t(search_result.first),
-                             search_result.second);
-          auto &res = reses.back();
-          auto cld = std_manager->key_cloud_vec_[search_result.first];
-          for (const auto &p : cld->points) {
-            res.center += p.getVector3fMap().cast<double>();
-          }
-          for (const auto &p : temp_cloud->points) {
-            res.center += p.getVector3fMap().cast<double>();
-          }
-          res.center /= cld->size() + temp_cloud->size();
-          res.iou = iou(cld, temp_cloud);
-        }
       }
       auto t_query_end = std::chrono::high_resolution_clock::now();
       querying_time.push_back(time_inc(t_query_end, t_query_begin));
+      if (search_result.first > -1) {
+        reses.emplace_back(keyCloudInd, size_t(search_result.first),
+                           search_result.second);
+        auto &res = reses.back();
+        auto cld = std_manager->key_cloud_vec_[search_result.first];
+        for (const auto &p : cld->points) {
+          res.center += p.getVector3fMap().cast<double>();
+        }
+        for (const auto &p : temp_cloud->points) {
+          res.center += p.getVector3fMap().cast<double>();
+        }
+        res.center /= cld->size() + temp_cloud->size();
+        res.iou = iou(cld, temp_cloud);
+        res.t_desc = descriptor_time.back();
+        res.t_query = querying_time.back();
+      }
 
       // step3. Add descriptors to the database
       auto t_map_update_begin = std::chrono::high_resolution_clock::now();
