@@ -36,7 +36,7 @@ ConfigSetting load_config() {
   lidar_path = config["lidar"].as<std::string>();
   pose_path = config["pose"].as<std::string>();
   calib_path = config["calib"].as<std::string>();
-  output_path = config["output"].as<std::string>();
+  output_path = config["result"].as<std::string>();
 
   // verify the output path
   fs::path output_parent = fs::path(output_path).parent_path();
